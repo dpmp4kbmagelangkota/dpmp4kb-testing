@@ -49,88 +49,1510 @@
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="https://cdn.jsdelivr.net/npm/quill@2/dist/quill.js"></script>
 <script>
-const SUPABASE_URL="https://adowlenrndjuyltfzoal.supabase.co";
-const SUPABASE_ANON_KEY="sb_publishable_F4slYKkvX8HAhYo_Zv6mNg_dssNezS4";
-const db=supabase.createClient(SUPABASE_URL,SUPABASE_ANON_KEY);
-const $=id=>document.getElementById(id);
-const q=new Quill("#editor",{theme:"snow",modules:{toolbar:[[{header:[1,2,3,false]}],["bold","italic","underline","strike"],[{list:"ordered"},{list:"bullet"}],["blockquote","link","image"],["clean"]]}});
-const esc=v=>String(v??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#039;"}[c]));
-function cleanEditorHTML(html){
-  const clean=DOMPurify.sanitize(String(html||""),{
-    ALLOWED_TAGS:["p","br","strong","em","u","s","h2","h3","ul","ol","li","blockquote","a","img"],
-    ALLOWED_ATTR:["href","target","rel","title","src","alt"],
-    ALLOW_UNKNOWN_PROTOCOLS:false,
-    FORBID_TAGS:["script","iframe","object","embed","form","style","link"],
-    FORBID_ATTR:["style","srcset","onerror","onload","onclick","onmouseover"],
-    ALLOWED_URI_REGEXP:/^(?:(?:https):|\/)/i
-  });
-  const tpl=document.createElement("template"); tpl.innerHTML=clean;
-  tpl.content.querySelectorAll("a").forEach(a=>{
-    try{const u=new URL(a.getAttribute("href")||"",location.href);
-      if(u.origin!==location.origin && (u.protocol!=="https:" || (!u.hostname.endsWith(".go.id") && u.hostname!=="go.id"))) a.replaceWith(...a.childNodes);
-      else {a.target="_blank";a.rel="noopener noreferrer nofollow";}
-    }catch{a.replaceWith(...a.childNodes)}
-  });
-  tpl.content.querySelectorAll("img").forEach(img=>{
-    try{const u=new URL(img.getAttribute("src")||"",location.href); if(u.origin!==location.origin && !u.hostname.endsWith(".supabase.co")) img.remove();}catch{img.remove()}
-  });
-  return tpl.innerHTML;
+/* =========================================================
+   DPMP4KB ADMIN
+   Supabase Authentication + RLS + CRUD Artikel
+   ========================================================= */
+
+const SUPABASE_URL = "https://adowlenrndjuyltfzoal.supabase.co";
+
+const SUPABASE_PUBLISHABLE_KEY =
+  "sb_publishable_F4slYKkvX8HAhYo_Zv6mNg_dssNezS4";
+
+
+/* =========================================================
+   ELEMENT HELPER
+   ========================================================= */
+
+const $ = (id) => document.getElementById(id);
+
+
+/* =========================================================
+   STATUS
+   ========================================================= */
+
+function loginMsg(text, error = false) {
+  const el = $("loginStatus");
+
+  if (!el) return;
+
+  el.textContent = text;
+  el.classList.remove("hidden");
+  el.classList.toggle("error", error);
 }
-const today=()=>new Date().toISOString().slice(0,10);
-function msg(text,error=false){$("status").textContent=text;$("status").classList.remove("hidden");$("status").classList.toggle("error",error)}
-function loginMsg(text){$("loginStatus").textContent=text;$("loginStatus").classList.remove("hidden")}
-async function verify(){
- const {data:{user}}=await db.auth.getUser();
- if(!user)return false;
- const {data:p}=await db.from("profiles").select("role").eq("id",user.id).maybeSingle();
- if(p?.role!=="admin"){await db.auth.signOut();loginMsg("Akun ini bukan admin.");return false}
- $("loginPanel").classList.add("hidden");$("dashboard").classList.remove("hidden");$("logout").classList.remove("hidden");$("userInfo").textContent=user.email;return true
+
+function msg(text, error = false) {
+  const el = $("status");
+
+  if (!el) return;
+
+  el.textContent = text;
+  el.classList.remove("hidden");
+  el.classList.toggle("error", error);
 }
-function reset(){ $("articleId").value="";$("title").value="";$("excerpt").value="";$("date").value=today();$("category").value="Berita";$("author").value="Admin DPMP4KB";$("image").value="";$("preview").innerHTML="";q.setContents([]);$("formTitle").textContent="Artikel Baru" }
-async function list(){
- const {data,error}=await db.from("articles").select("*").order("date",{ascending:false}).order("id",{ascending:false});
- if(error)return msg(error.message,true);
- $("articleList").innerHTML=data?.length?data.map(a=>`<div class="admin-item"><div class="admin-item-left">${a.image_url?`<img class="admin-thumb" src="${esc(a.image_url)}">`:"<div class='admin-thumb'></div>"}<div><b>${esc(a.title)}</b><div class="small">${esc(a.category)} • ${esc(a.date)} • ${a.published?"Published":"Draft"}</div></div></div><div class="buttons"><button class="abtn secondary" data-edit="${a.id}">Edit</button><button class="abtn danger" data-delete="${a.id}">Hapus</button></div></div>`).join(""):"<p class='small'>Belum ada artikel.</p>"
+
+
+/* =========================================================
+   SUPABASE
+   ========================================================= */
+
+let db = null;
+
+try {
+
+  if (
+    typeof supabase === "undefined" ||
+    typeof supabase.createClient !== "function"
+  ) {
+    throw new Error(
+      "Library Supabase tidak berhasil dimuat dari CDN."
+    );
+  }
+
+  db = supabase.createClient(
+    SUPABASE_URL,
+    SUPABASE_PUBLISHABLE_KEY
+  );
+
+} catch (error) {
+
+  console.error("Supabase initialization error:", error);
+
+  loginMsg(
+    "Gagal memuat koneksi Supabase. Buka F12 → Console untuk melihat detail.",
+    true
+  );
+
 }
-async function edit(id){
- const {data,error}=await db.from("articles").select("*").eq("id",id).single();if(error)return msg(error.message,true);
- $("articleId").value=data.id;$("title").value=data.title;$("excerpt").value=data.excerpt;$("date").value=data.date;$("category").value=data.category;$("author").value=data.author;q.root.innerHTML=cleanEditorHTML(data.content||"");$("preview").innerHTML=data.image_url?`<img src="${esc(data.image_url)}">`:"";$("image").value="";$("formTitle").textContent="Edit Artikel";scrollTo({top:0,behavior:"smooth"})
+
+
+/* =========================================================
+   QUILL
+   Login TIDAK bergantung pada Quill.
+   ========================================================= */
+
+let q = null;
+
+try {
+
+  if (
+    typeof Quill !== "undefined" &&
+    document.querySelector("#editor")
+  ) {
+
+    q = new Quill("#editor", {
+      theme: "snow",
+
+      modules: {
+        toolbar: [
+          [{ header: [1, 2, 3, false] }],
+          ["bold", "italic", "underline", "strike"],
+          [{ list: "ordered" }, { list: "bullet" }],
+          ["blockquote", "link", "image"],
+          ["clean"]
+        ]
+      }
+    });
+
+  }
+
+} catch (error) {
+
+  console.error("Quill initialization error:", error);
+
 }
-async function upload(user){
- const f=$("image").files[0];if(!f)return null;
- if(f.size>5242880)throw Error("Ukuran gambar maksimal 5 MB.");
- if(!["image/jpeg","image/png","image/webp"].includes(f.type))throw Error("Gunakan JPG, PNG, atau WebP.");
- const ext={"image/jpeg":"jpg","image/png":"png","image/webp":"webp"}[f.type];if(!ext)throw Error("Format gambar tidak diperbolehkan.");const path=`${user.id}/${crypto.randomUUID()}.${ext}`;
- const {error}=await db.storage.from("article-images").upload(path,f,{contentType:f.type,upsert:false});if(error)throw error;
- const {data}=db.storage.from("article-images").getPublicUrl(path);return {url:data.publicUrl,path}
+
+
+/* =========================================================
+   ESCAPE HTML
+   ========================================================= */
+
+const esc = (value) => {
+
+  return String(value ?? "").replace(
+    /[&<>"']/g,
+
+    (char) => ({
+      "&": "&amp;",
+      "<": "&lt;",
+      ">": "&gt;",
+      '"': "&quot;",
+      "'": "&#039;"
+    })[char]
+  );
+
+};
+
+
+/* =========================================================
+   SANITASI HTML ARTIKEL
+   ========================================================= */
+
+function cleanEditorHTML(html) {
+
+  if (typeof DOMPurify === "undefined") {
+
+    throw new Error(
+      "DOMPurify tidak berhasil dimuat."
+    );
+
+  }
+
+  const clean = DOMPurify.sanitize(
+    String(html || ""),
+    {
+      ALLOWED_TAGS: [
+        "p",
+        "br",
+        "strong",
+        "em",
+        "u",
+        "s",
+        "h2",
+        "h3",
+        "ul",
+        "ol",
+        "li",
+        "blockquote",
+        "a",
+        "img"
+      ],
+
+      ALLOWED_ATTR: [
+        "href",
+        "target",
+        "rel",
+        "title",
+        "src",
+        "alt"
+      ],
+
+      ALLOW_UNKNOWN_PROTOCOLS: false,
+
+      FORBID_TAGS: [
+        "script",
+        "iframe",
+        "object",
+        "embed",
+        "form",
+        "style",
+        "link"
+      ],
+
+      FORBID_ATTR: [
+        "style",
+        "srcset",
+        "onerror",
+        "onload",
+        "onclick",
+        "onmouseover"
+      ],
+
+      ALLOWED_URI_REGEXP:
+        /^(?:(?:https):|\/)/i
+    }
+  );
+
+
+  const template =
+    document.createElement("template");
+
+  template.innerHTML = clean;
+
+
+  /* =====================================================
+     AMANKAN LINK
+     ===================================================== */
+
+  template.content
+    .querySelectorAll("a")
+    .forEach((a) => {
+
+      try {
+
+        const url = new URL(
+          a.getAttribute("href") || "",
+          location.href
+        );
+
+
+        /*
+         * Izinkan:
+         *
+         * - link internal
+         * - HTTPS
+         * - domain *.go.id
+         *
+         * Selain itu dibuang.
+         */
+
+        if (
+          url.origin !== location.origin &&
+          (
+            url.protocol !== "https:" ||
+            (
+              !url.hostname.endsWith(".go.id") &&
+              url.hostname !== "go.id"
+            )
+          )
+        ) {
+
+          a.replaceWith(
+            ...a.childNodes
+          );
+
+        } else {
+
+          a.target = "_blank";
+
+          a.rel =
+            "noopener noreferrer nofollow";
+
+        }
+
+      } catch {
+
+        a.replaceWith(
+          ...a.childNodes
+        );
+
+      }
+
+    });
+
+
+  /* =====================================================
+     AMANKAN GAMBAR
+     ===================================================== */
+
+  template.content
+    .querySelectorAll("img")
+    .forEach((img) => {
+
+      try {
+
+        const url = new URL(
+          img.getAttribute("src") || "",
+          location.href
+        );
+
+
+        if (
+          url.origin !== location.origin &&
+          !url.hostname.endsWith(".supabase.co")
+        ) {
+
+          img.remove();
+
+        }
+
+      } catch {
+
+        img.remove();
+
+      }
+
+    });
+
+
+  return template.innerHTML;
+
 }
-async function save(published){
- const {data:{user}}=await db.auth.getUser();if(!user)throw Error("Sesi login habis.");
- const image=await upload(user);
- const payload={title:$("title").value.trim(),excerpt:$("excerpt").value.trim(),content:cleanEditorHTML(q.root.innerHTML),date:$("date").value||today(),category:$("category").value.trim()||"Berita",author:$("author").value.trim()||"Admin DPMP4KB",published,created_by:user.id};
- if(image){payload.image_url=image.url;payload.image_path=image.path}
- if(!payload.title)throw Error("Judul wajib diisi.");
- let r=$("articleId").value
-   ? await db.from("articles").update(payload).eq("id",$("articleId").value)
-   : await db.from("articles").insert(payload);
- if(r.error)throw r.error;
- await list();
- if(published)await publish();
- msg(published?"Artikel disimpan dan dipublish.":"Draft tersimpan.");
+
+
+/* =========================================================
+   TANGGAL
+   ========================================================= */
+
+function today() {
+
+  return new Date()
+    .toISOString()
+    .slice(0, 10);
+
 }
-async function publish(){
- const {data:{session}}=await db.auth.getSession();if(!session)throw Error("Sesi login habis.");
- const {data,error}=await db.functions.invoke("publish-articles",{headers:{Authorization:"Bearer "+session.access_token},body:{}});
- if(error)throw error;return data;
+
+
+/* =========================================================
+   RESET FORM
+   ========================================================= */
+
+function reset() {
+
+  $("articleId").value = "";
+
+  $("title").value = "";
+
+  $("excerpt").value = "";
+
+  $("date").value = today();
+
+  $("category").value = "Berita";
+
+  $("author").value =
+    "Admin DPMP4KB";
+
+  $("image").value = "";
+
+  $("preview").innerHTML = "";
+
+  if (q) {
+
+    q.setContents([]);
+
+  }
+
+  $("formTitle").textContent =
+    "Artikel Baru";
+
 }
-$("loginBtn").onclick=async()=>{const {error}=await db.auth.signInWithPassword({email:$("email").value,password:$("password").value});if(error)return loginMsg(error.message);if(await verify()){reset();await list()}};
-$("logout").onclick=async()=>{await db.auth.signOut();location.reload()};
-$("newBtn").onclick=reset;$("refresh").onclick=list;
-$("saveDraft").onclick=async()=>{try{await save(false)}catch(e){msg(e.message,true)}};
-$("savePublish").onclick=async()=>{try{await save(true)}catch(e){msg(e.message,true)}};
-$("publishAll").onclick=async()=>{try{const r=await publish();msg(`Publish selesai: ${r.published} artikel.`)}catch(e){msg(e.message,true)}};
-$("articleList").onclick=async e=>{const ed=e.target.closest("[data-edit]"),del=e.target.closest("[data-delete]");if(ed)return edit(ed.dataset.edit);if(del&&confirm("Hapus artikel ini?")){const {error}=await db.from("articles").delete().eq("id",del.dataset.delete);if(error)return msg(error.message,true);await publish();await list();msg("Artikel dihapus dan data public diperbarui.")}};
-(async()=>{if(await verify()){reset();await list()}})();
+
+
+/* =========================================================
+   VERIFIKASI ADMIN
+   ========================================================= */
+
+async function verifyAdmin() {
+
+  if (!db) {
+
+    loginMsg(
+      "Koneksi Supabase belum tersedia.",
+      true
+    );
+
+    return false;
+
+  }
+
+
+  try {
+
+    const {
+      data,
+      error
+    } = await db.auth.getUser();
+
+
+    if (error) {
+
+      console.error(
+        "getUser error:",
+        error
+      );
+
+      return false;
+
+    }
+
+
+    const user = data?.user;
+
+
+    if (!user) {
+
+      return false;
+
+    }
+
+
+    console.log(
+      "User login:",
+      user.id,
+      user.email
+    );
+
+
+    /*
+     * Cek role admin melalui profiles.
+     */
+
+    const {
+      data: profile,
+      error: profileError
+    } = await db
+      .from("profiles")
+      .select("id, role")
+      .eq("id", user.id)
+      .maybeSingle();
+
+
+    if (profileError) {
+
+      console.error(
+        "Profile error:",
+        profileError
+      );
+
+      loginMsg(
+        "Login berhasil, tetapi gagal membaca role admin: " +
+        profileError.message,
+        true
+      );
+
+      await db.auth.signOut();
+
+      return false;
+
+    }
+
+
+    if (!profile) {
+
+      await db.auth.signOut();
+
+      loginMsg(
+        "Akun berhasil login tetapi belum terdaftar sebagai admin di tabel profiles.",
+        true
+      );
+
+      return false;
+
+    }
+
+
+    if (profile.role !== "admin") {
+
+      await db.auth.signOut();
+
+      loginMsg(
+        "Akun ini bukan admin.",
+        true
+      );
+
+      return false;
+
+    }
+
+
+    /*
+     * Berhasil.
+     */
+
+    $("loginPanel")
+      .classList
+      .add("hidden");
+
+    $("dashboard")
+      .classList
+      .remove("hidden");
+
+    $("logout")
+      .classList
+      .remove("hidden");
+
+    $("userInfo").textContent =
+      user.email || user.id;
+
+
+    return true;
+
+  } catch (error) {
+
+    console.error(
+      "verifyAdmin error:",
+      error
+    );
+
+    loginMsg(
+      "Terjadi kesalahan saat memeriksa akun: " +
+      (error.message || error),
+      true
+    );
+
+    return false;
+
+  }
+
+}
+
+
+/* =========================================================
+   LOGIN
+   ========================================================= */
+
+async function login() {
+
+  const button = $("loginBtn");
+
+  const email =
+    $("email").value.trim();
+
+  const password =
+    $("password").value;
+
+
+  /*
+   * Validasi dasar.
+   */
+
+  if (!email) {
+
+    loginMsg(
+      "Email wajib diisi.",
+      true
+    );
+
+    $("email").focus();
+
+    return;
+
+  }
+
+
+  if (!password) {
+
+    loginMsg(
+      "Password wajib diisi.",
+      true
+    );
+
+    $("password").focus();
+
+    return;
+
+  }
+
+
+  if (!db) {
+
+    loginMsg(
+      "Supabase belum berhasil dimuat. Tekan F12 → Console.",
+      true
+    );
+
+    return;
+
+  }
+
+
+  try {
+
+    button.disabled = true;
+
+    button.textContent =
+      "Memproses...";
+
+    loginMsg(
+      "Menghubungkan ke Supabase..."
+    );
+
+
+    const {
+      data,
+      error
+    } = await db.auth.signInWithPassword({
+      email,
+      password
+    });
+
+
+    console.log(
+      "Supabase login response:",
+      {
+        user: data?.user?.id,
+        error
+      }
+    );
+
+
+    if (error) {
+
+      loginMsg(
+        error.message ||
+        "Email atau password salah.",
+        true
+      );
+
+      return;
+
+    }
+
+
+    if (!data?.user) {
+
+      loginMsg(
+        "Login tidak menghasilkan user.",
+        true
+      );
+
+      return;
+
+    }
+
+
+    loginMsg(
+      "Login berhasil. Memeriksa hak admin..."
+    );
+
+
+    const isAdmin =
+      await verifyAdmin();
+
+
+    if (!isAdmin) {
+
+      return;
+
+    }
+
+
+    reset();
+
+    await list();
+
+
+    loginMsg(
+      "Login berhasil."
+    );
+
+
+  } catch (error) {
+
+    console.error(
+      "LOGIN ERROR:",
+      error
+    );
+
+
+    loginMsg(
+      "Login gagal: " +
+      (error.message || error),
+      true
+    );
+
+  } finally {
+
+    button.disabled = false;
+
+    button.textContent =
+      "Masuk";
+
+  }
+
+}
+
+
+/* =========================================================
+   ARTIKEL LIST
+   ========================================================= */
+
+async function list() {
+
+  try {
+
+    const {
+      data,
+      error
+    } = await db
+      .from("articles")
+      .select("*")
+      .order("date", {
+        ascending: false
+      })
+      .order("id", {
+        ascending: false
+      });
+
+
+    if (error) {
+
+      throw error;
+
+    }
+
+
+    $("articleList").innerHTML =
+      data?.length
+
+        ? data.map((article) => `
+
+          <div class="admin-item">
+
+            <div class="admin-item-left">
+
+              ${
+                article.image_url
+
+                ? `
+                  <img
+                    class="admin-thumb"
+                    src="${esc(article.image_url)}"
+                    alt=""
+                  >
+                `
+
+                : `
+                  <div class="admin-thumb"></div>
+                `
+              }
+
+              <div>
+
+                <b>
+                  ${esc(article.title)}
+                </b>
+
+                <div class="small">
+
+                  ${esc(article.category)}
+                  •
+                  ${esc(article.date)}
+                  •
+                  ${
+                    article.published
+                      ? "Published"
+                      : "Draft"
+                  }
+
+                </div>
+
+              </div>
+
+            </div>
+
+
+            <div class="buttons">
+
+              <button
+                class="abtn secondary"
+                data-edit="${article.id}"
+              >
+                Edit
+              </button>
+
+
+              <button
+                class="abtn danger"
+                data-delete="${article.id}"
+              >
+                Hapus
+              </button>
+
+            </div>
+
+          </div>
+
+        `).join("")
+
+        : `
+          <p class="small">
+            Belum ada artikel.
+          </p>
+        `;
+
+
+  } catch (error) {
+
+    console.error(
+      "LIST ARTICLE ERROR:",
+      error
+    );
+
+    msg(
+      "Gagal mengambil artikel: " +
+      error.message,
+      true
+    );
+
+  }
+
+}
+
+
+/* =========================================================
+   EDIT ARTIKEL
+   ========================================================= */
+
+async function edit(id) {
+
+  try {
+
+    const {
+      data,
+      error
+    } = await db
+      .from("articles")
+      .select("*")
+      .eq("id", id)
+      .single();
+
+
+    if (error) {
+
+      throw error;
+
+    }
+
+
+    $("articleId").value =
+      data.id;
+
+    $("title").value =
+      data.title || "";
+
+    $("excerpt").value =
+      data.excerpt || "";
+
+    $("date").value =
+      data.date || today();
+
+    $("category").value =
+      data.category || "Berita";
+
+    $("author").value =
+      data.author || "Admin DPMP4KB";
+
+
+    if (q) {
+
+      q.root.innerHTML =
+        cleanEditorHTML(
+          data.content || ""
+        );
+
+    }
+
+
+    $("preview").innerHTML =
+      data.image_url
+
+        ? `
+          <img
+            src="${esc(data.image_url)}"
+            alt=""
+          >
+        `
+
+        : "";
+
+
+    $("image").value = "";
+
+    $("formTitle").textContent =
+      "Edit Artikel";
+
+
+    window.scrollTo({
+      top: 0,
+      behavior: "smooth"
+    });
+
+
+  } catch (error) {
+
+    console.error(
+      "EDIT ARTICLE ERROR:",
+      error
+    );
+
+    msg(
+      "Gagal membuka artikel: " +
+      error.message,
+      true
+    );
+
+  }
+
+}
+
+
+/* =========================================================
+   UPLOAD GAMBAR
+   ========================================================= */
+
+async function upload(user) {
+
+  const file =
+    $("image").files[0];
+
+
+  if (!file) {
+
+    return null;
+
+  }
+
+
+  if (
+    file.size > 5 * 1024 * 1024
+  ) {
+
+    throw new Error(
+      "Ukuran gambar maksimal 5 MB."
+    );
+
+  }
+
+
+  const allowed = [
+    "image/jpeg",
+    "image/png",
+    "image/webp"
+  ];
+
+
+  if (!allowed.includes(file.type)) {
+
+    throw new Error(
+      "Gunakan JPG, PNG, atau WebP."
+    );
+
+  }
+
+
+  const ext = {
+
+    "image/jpeg": "jpg",
+    "image/png": "png",
+    "image/webp": "webp"
+
+  }[file.type];
+
+
+  const path =
+    `${user.id}/${crypto.randomUUID()}.${ext}`;
+
+
+  const {
+    error
+  } = await db
+    .storage
+    .from("article-images")
+    .upload(
+      path,
+      file,
+      {
+        contentType: file.type,
+        upsert: false
+      }
+    );
+
+
+  if (error) {
+
+    throw error;
+
+  }
+
+
+  const {
+    data
+  } = db
+    .storage
+    .from("article-images")
+    .getPublicUrl(path);
+
+
+  return {
+
+    url: data.publicUrl,
+
+    path
+
+  };
+
+}
+
+
+/* =========================================================
+   SIMPAN ARTIKEL
+   ========================================================= */
+
+async function save(published) {
+
+  const {
+    data: {
+      user
+    }
+  } = await db.auth.getUser();
+
+
+  if (!user) {
+
+    throw new Error(
+      "Sesi login habis. Silakan login kembali."
+    );
+
+  }
+
+
+  if (!q) {
+
+    throw new Error(
+      "Editor artikel belum berhasil dimuat."
+    );
+
+  }
+
+
+  const image =
+    await upload(user);
+
+
+  const payload = {
+
+    title:
+      $("title")
+        .value
+        .trim(),
+
+    excerpt:
+      $("excerpt")
+        .value
+        .trim(),
+
+    content:
+      cleanEditorHTML(
+        q.root.innerHTML
+      ),
+
+    date:
+      $("date").value ||
+      today(),
+
+    category:
+      $("category")
+        .value
+        .trim() ||
+      "Berita",
+
+    author:
+      $("author")
+        .value
+        .trim() ||
+      "Admin DPMP4KB",
+
+    published,
+
+    created_by:
+      user.id
+
+  };
+
+
+  if (image) {
+
+    payload.image_url =
+      image.url;
+
+    payload.image_path =
+      image.path;
+
+  }
+
+
+  if (!payload.title) {
+
+    throw new Error(
+      "Judul wajib diisi."
+    );
+
+  }
+
+
+  let result;
+
+
+  if ($("articleId").value) {
+
+    result =
+      await db
+        .from("articles")
+        .update(payload)
+        .eq(
+          "id",
+          $("articleId").value
+        );
+
+  } else {
+
+    result =
+      await db
+        .from("articles")
+        .insert(payload);
+
+  }
+
+
+  if (result.error) {
+
+    throw result.error;
+
+  }
+
+
+  await list();
+
+
+  if (published) {
+
+    await publish();
+
+  }
+
+
+  msg(
+    published
+      ? "Artikel berhasil disimpan dan dipublish."
+      : "Draft berhasil disimpan."
+  );
+
+}
+
+
+/* =========================================================
+   PUBLISH
+   ========================================================= */
+
+async function publish() {
+
+  const {
+    data: {
+      session
+    }
+  } = await db.auth.getSession();
+
+
+  if (!session) {
+
+    throw new Error(
+      "Sesi login habis."
+    );
+
+  }
+
+
+  const {
+    data,
+    error
+  } =
+    await db.functions.invoke(
+      "publish-articles",
+      {
+        headers: {
+          Authorization:
+            "Bearer " +
+            session.access_token
+        },
+
+        body: {}
+      }
+    );
+
+
+  if (error) {
+
+    throw error;
+
+  }
+
+
+  return data;
+
+}
+
+
+/* =========================================================
+   LOGOUT
+   ========================================================= */
+
+async function logout() {
+
+  try {
+
+    await db.auth.signOut();
+
+  } finally {
+
+    window.location.reload();
+
+  }
+
+}
+
+
+/* =========================================================
+   EVENT HANDLERS
+   ========================================================= */
+
+function setupEvents() {
+
+  $("loginBtn")
+    .addEventListener(
+      "click",
+      login
+    );
+
+
+  $("password")
+    .addEventListener(
+      "keydown",
+      (event) => {
+
+        if (event.key === "Enter") {
+
+          event.preventDefault();
+
+          login();
+
+        }
+
+      }
+    );
+
+
+  $("logout")
+    .addEventListener(
+      "click",
+      logout
+    );
+
+
+  $("newBtn")
+    .addEventListener(
+      "click",
+      reset
+    );
+
+
+  $("refresh")
+    .addEventListener(
+      "click",
+      list
+    );
+
+
+  $("saveDraft")
+    .addEventListener(
+      "click",
+      async () => {
+
+        try {
+
+          await save(false);
+
+        } catch (error) {
+
+          console.error(error);
+
+          msg(
+            error.message,
+            true
+          );
+
+        }
+
+      }
+    );
+
+
+  $("savePublish")
+    .addEventListener(
+      "click",
+      async () => {
+
+        try {
+
+          await save(true);
+
+        } catch (error) {
+
+          console.error(error);
+
+          msg(
+            error.message,
+            true
+          );
+
+        }
+
+      }
+    );
+
+
+  $("publishAll")
+    .addEventListener(
+      "click",
+      async () => {
+
+        try {
+
+          const result =
+            await publish();
+
+
+          msg(
+            `Publish selesai: ${
+              result?.published ?? 0
+            } artikel.`
+          );
+
+
+        } catch (error) {
+
+          console.error(error);
+
+          msg(
+            error.message,
+            true
+          );
+
+        }
+
+      }
+    );
+
+
+  $("articleList")
+    .addEventListener(
+      "click",
+      async (event) => {
+
+        const editButton =
+          event.target.closest(
+            "[data-edit]"
+          );
+
+        const deleteButton =
+          event.target.closest(
+            "[data-delete]"
+          );
+
+
+        if (editButton) {
+
+          await edit(
+            editButton.dataset.edit
+          );
+
+          return;
+
+        }
+
+
+        if (
+          deleteButton &&
+          confirm(
+            "Hapus artikel ini?"
+          )
+        ) {
+
+          try {
+
+            const {
+              error
+            } = await db
+              .from("articles")
+              .delete()
+              .eq(
+                "id",
+                deleteButton.dataset.delete
+              );
+
+
+            if (error) {
+
+              throw error;
+
+            }
+
+
+            await publish();
+
+            await list();
+
+            msg(
+              "Artikel berhasil dihapus dan website public diperbarui."
+            );
+
+
+          } catch (error) {
+
+            console.error(error);
+
+            msg(
+              error.message,
+              true
+            );
+
+          }
+
+        }
+
+      }
+    );
+
+}
+
+
+/* =========================================================
+   START ADMIN
+   ========================================================= */
+
+(async function initAdmin() {
+
+  try {
+
+    /*
+     * Pastikan semua element tersedia.
+     */
+
+    if (
+      !$("loginBtn") ||
+      !$("email") ||
+      !$("password")
+    ) {
+
+      throw new Error(
+        "Element login tidak ditemukan."
+      );
+
+    }
+
+
+    setupEvents();
+
+
+    /*
+     * Cek apakah sudah ada session.
+     */
+
+    if (db) {
+
+      const isAdmin =
+        await verifyAdmin();
+
+
+      if (isAdmin) {
+
+        reset();
+
+        await list();
+
+      }
+
+    }
+
+
+  } catch (error) {
+
+    console.error(
+      "ADMIN INIT ERROR:",
+      error
+    );
+
+
+    loginMsg(
+      "Admin gagal dimuat: " +
+      (error.message || error) +
+      ". Tekan F12 → Console.",
+      true
+    );
+
+  }
+
+})();
 </script>
 </body>
 </html>
