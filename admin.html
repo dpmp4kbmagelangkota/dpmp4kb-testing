@@ -1,0 +1,136 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'none'; form-action 'self'; script-src 'self' https://cdn.jsdelivr.net 'unsafe-inline'; style-src 'self' https://cdn.jsdelivr.net 'unsafe-inline'; img-src 'self' data: https://*.supabase.co; connect-src 'self' https://*.supabase.co wss://*.supabase.co; font-src 'self' data: https://cdn.jsdelivr.net;">
+<title>Admin — DPMP4KB Kota Magelang</title>
+<link rel="icon" href="assets/logo-kota-magelang.svg">
+<link rel="stylesheet" href="style.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/quill@2/dist/quill.snow.css">
+<style>
+.admin-page{background:#f3f7f5;min-height:100vh}.admin-wrap{width:min(1120px,calc(100% - 28px));margin:auto;padding:30px 0 70px}.admin-top{display:flex;justify-content:space-between;align-items:center;margin-bottom:18px}.admin-brand{display:flex;align-items:center;gap:10px}.admin-brand img{width:42px;height:48px}.panel{background:#fff;border:1px solid #dfe8e4;border-radius:18px;padding:22px;box-shadow:0 8px 30px #0f172a08;margin-bottom:18px}.login-panel{width:min(440px,100%);margin:10vh auto}.field{margin-bottom:14px}.field label{display:block;font-size:.86rem;font-weight:800;margin-bottom:6px}.field input,.field textarea,.field select{width:100%;border:1px solid #cbd5e1;border-radius:10px;padding:11px;font:inherit}.row{display:grid;grid-template-columns:1fr 1fr;gap:14px}.buttons{display:flex;gap:8px;flex-wrap:wrap;margin-top:14px}.abtn{border:0;border-radius:10px;padding:11px 15px;font:inherit;font-weight:800;cursor:pointer}.primary{background:#087f63;color:#fff}.secondary{background:#e2e8f0;color:#172033}.danger{background:#dc2626;color:#fff}.warning{background:#f59e0b;color:#172033}.status{padding:11px;border-radius:10px;background:#ecfdf5;color:#065f46;margin-top:12px}.status.error{background:#fef2f2;color:#991b1b}.hidden{display:none!important}.article-list{display:grid;gap:8px}.admin-item{display:flex;justify-content:space-between;gap:15px;padding:14px;border:1px solid #e2e8f0;border-radius:12px;align-items:center}.admin-item-left{display:flex;gap:12px;align-items:center}.admin-thumb{width:70px;height:50px;object-fit:cover;border-radius:8px;background:#e2e8f0}.small{font-size:.78rem;color:#64748b}.ql-container{min-height:280px}.preview img{max-width:220px;max-height:130px;object-fit:cover;border-radius:10px;margin-top:10px}.login-note{font-size:.82rem;color:#64748b}@media(max-width:700px){.row{grid-template-columns:1fr}.admin-item{align-items:flex-start;flex-direction:column}}
+</style>
+</head>
+<body class="admin-page">
+<header class="site-header"><div class="wrap nav">
+<a class="brand" href="./"><img src="assets/logo-kota-magelang.svg" alt="Logo"><span><strong>DPMP4KB</strong><small>Admin Online</small></span></a>
+<button id="logout" class="abtn secondary hidden">Keluar</button>
+</div></header>
+
+<main class="admin-wrap">
+<section id="loginPanel" class="panel login-panel">
+<h1>Login Admin</h1><p class="login-note">Gunakan akun admin yang dibuat di Supabase Authentication.</p>
+<div class="field"><label>Email</label><input id="email" type="email" autocomplete="username"></div>
+<div class="field"><label>Password</label><input id="password" type="password" autocomplete="current-password"></div>
+<button id="loginBtn" class="abtn primary">Masuk</button>
+<div id="loginStatus" class="status hidden"></div>
+</section>
+
+<section id="dashboard" class="hidden">
+<div class="admin-top"><div><h1 id="formTitle">Artikel Baru</h1><div id="userInfo" class="small"></div></div><button id="newBtn" class="abtn secondary">+ Artikel Baru</button></div>
+
+<div class="panel">
+<input id="articleId" type="hidden">
+<div class="field"><label>Judul</label><input id="title" maxlength="180"></div>
+<div class="field"><label>Ringkasan</label><textarea id="excerpt" rows="3" maxlength="500"></textarea></div>
+<div class="row"><div class="field"><label>Tanggal</label><input id="date" type="date"></div><div class="field"><label>Kategori</label><input id="category" value="Berita" maxlength="80"></div></div>
+<div class="field"><label>Penulis</label><input id="author" value="Admin DPMP4KB" maxlength="100"></div>
+<div class="field"><label>Foto utama</label><input id="image" type="file" accept="image/jpeg,image/png,image/webp"><div class="small">JPG/PNG/WebP, maksimal 5 MB.</div><div id="preview" class="preview"></div></div>
+<div class="field"><label>Isi artikel</label><div id="editor"></div></div>
+<div class="buttons"><button id="saveDraft" class="abtn secondary">Simpan Draft</button><button id="savePublish" class="abtn primary">Simpan & Publish</button><button id="publishAll" class="abtn warning">Publish Ulang Semua</button></div>
+<div id="status" class="status hidden"></div>
+</div>
+
+<div class="panel"><div class="section-head"><h2>Artikel</h2><button id="refresh" class="abtn secondary">Refresh</button></div><div id="articleList" class="article-list"></div></div>
+</section>
+</main>
+
+<script src="https://cdn.jsdelivr.net/npm/dompurify@3.3.0/dist/purify.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="https://cdn.jsdelivr.net/npm/quill@2/dist/quill.js"></script>
+<script>
+const SUPABASE_URL="__SUPABASE_URL__";
+const SUPABASE_ANON_KEY="__SUPABASE_ANON_KEY__";
+const db=supabase.createClient(SUPABASE_URL,SUPABASE_ANON_KEY);
+const $=id=>document.getElementById(id);
+const q=new Quill("#editor",{theme:"snow",modules:{toolbar:[[{header:[1,2,3,false]}],["bold","italic","underline","strike"],[{list:"ordered"},{list:"bullet"}],["blockquote","link","image"],["clean"]]}});
+const esc=v=>String(v??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#039;"}[c]));
+function cleanEditorHTML(html){
+  const clean=DOMPurify.sanitize(String(html||""),{
+    ALLOWED_TAGS:["p","br","strong","em","u","s","h2","h3","ul","ol","li","blockquote","a","img"],
+    ALLOWED_ATTR:["href","target","rel","title","src","alt"],
+    ALLOW_UNKNOWN_PROTOCOLS:false,
+    FORBID_TAGS:["script","iframe","object","embed","form","style","link"],
+    FORBID_ATTR:["style","srcset","onerror","onload","onclick","onmouseover"],
+    ALLOWED_URI_REGEXP:/^(?:(?:https):|\/)/i
+  });
+  const tpl=document.createElement("template"); tpl.innerHTML=clean;
+  tpl.content.querySelectorAll("a").forEach(a=>{
+    try{const u=new URL(a.getAttribute("href")||"",location.href);
+      if(u.origin!==location.origin && (u.protocol!=="https:" || (!u.hostname.endsWith(".go.id") && u.hostname!=="go.id"))) a.replaceWith(...a.childNodes);
+      else {a.target="_blank";a.rel="noopener noreferrer nofollow";}
+    }catch{a.replaceWith(...a.childNodes)}
+  });
+  tpl.content.querySelectorAll("img").forEach(img=>{
+    try{const u=new URL(img.getAttribute("src")||"",location.href); if(u.origin!==location.origin && !u.hostname.endsWith(".supabase.co")) img.remove();}catch{img.remove()}
+  });
+  return tpl.innerHTML;
+}
+const today=()=>new Date().toISOString().slice(0,10);
+function msg(text,error=false){$("status").textContent=text;$("status").classList.remove("hidden");$("status").classList.toggle("error",error)}
+function loginMsg(text){$("loginStatus").textContent=text;$("loginStatus").classList.remove("hidden")}
+async function verify(){
+ const {data:{user}}=await db.auth.getUser();
+ if(!user)return false;
+ const {data:p}=await db.from("profiles").select("role").eq("id",user.id).maybeSingle();
+ if(p?.role!=="admin"){await db.auth.signOut();loginMsg("Akun ini bukan admin.");return false}
+ $("loginPanel").classList.add("hidden");$("dashboard").classList.remove("hidden");$("logout").classList.remove("hidden");$("userInfo").textContent=user.email;return true
+}
+function reset(){ $("articleId").value="";$("title").value="";$("excerpt").value="";$("date").value=today();$("category").value="Berita";$("author").value="Admin DPMP4KB";$("image").value="";$("preview").innerHTML="";q.setContents([]);$("formTitle").textContent="Artikel Baru" }
+async function list(){
+ const {data,error}=await db.from("articles").select("*").order("date",{ascending:false}).order("id",{ascending:false});
+ if(error)return msg(error.message,true);
+ $("articleList").innerHTML=data?.length?data.map(a=>`<div class="admin-item"><div class="admin-item-left">${a.image_url?`<img class="admin-thumb" src="${esc(a.image_url)}">`:"<div class='admin-thumb'></div>"}<div><b>${esc(a.title)}</b><div class="small">${esc(a.category)} • ${esc(a.date)} • ${a.published?"Published":"Draft"}</div></div></div><div class="buttons"><button class="abtn secondary" data-edit="${a.id}">Edit</button><button class="abtn danger" data-delete="${a.id}">Hapus</button></div></div>`).join(""):"<p class='small'>Belum ada artikel.</p>"
+}
+async function edit(id){
+ const {data,error}=await db.from("articles").select("*").eq("id",id).single();if(error)return msg(error.message,true);
+ $("articleId").value=data.id;$("title").value=data.title;$("excerpt").value=data.excerpt;$("date").value=data.date;$("category").value=data.category;$("author").value=data.author;q.root.innerHTML=cleanEditorHTML(data.content||"");$("preview").innerHTML=data.image_url?`<img src="${esc(data.image_url)}">`:"";$("image").value="";$("formTitle").textContent="Edit Artikel";scrollTo({top:0,behavior:"smooth"})
+}
+async function upload(user){
+ const f=$("image").files[0];if(!f)return null;
+ if(f.size>5242880)throw Error("Ukuran gambar maksimal 5 MB.");
+ if(!["image/jpeg","image/png","image/webp"].includes(f.type))throw Error("Gunakan JPG, PNG, atau WebP.");
+ const ext={"image/jpeg":"jpg","image/png":"png","image/webp":"webp"}[f.type];if(!ext)throw Error("Format gambar tidak diperbolehkan.");const path=`${user.id}/${crypto.randomUUID()}.${ext}`;
+ const {error}=await db.storage.from("article-images").upload(path,f,{contentType:f.type,upsert:false});if(error)throw error;
+ const {data}=db.storage.from("article-images").getPublicUrl(path);return {url:data.publicUrl,path}
+}
+async function save(published){
+ const {data:{user}}=await db.auth.getUser();if(!user)throw Error("Sesi login habis.");
+ const image=await upload(user);
+ const payload={title:$("title").value.trim(),excerpt:$("excerpt").value.trim(),content:cleanEditorHTML(q.root.innerHTML),date:$("date").value||today(),category:$("category").value.trim()||"Berita",author:$("author").value.trim()||"Admin DPMP4KB",published,created_by:user.id};
+ if(image){payload.image_url=image.url;payload.image_path=image.path}
+ if(!payload.title)throw Error("Judul wajib diisi.");
+ let r=$("articleId").value
+   ? await db.from("articles").update(payload).eq("id",$("articleId").value)
+   : await db.from("articles").insert(payload);
+ if(r.error)throw r.error;
+ await list();
+ if(published)await publish();
+ msg(published?"Artikel disimpan dan dipublish.":"Draft tersimpan.");
+}
+async function publish(){
+ const {data:{session}}=await db.auth.getSession();if(!session)throw Error("Sesi login habis.");
+ const {data,error}=await db.functions.invoke("publish-articles",{headers:{Authorization:"Bearer "+session.access_token},body:{}});
+ if(error)throw error;return data;
+}
+$("loginBtn").onclick=async()=>{const {error}=await db.auth.signInWithPassword({email:$("email").value,password:$("password").value});if(error)return loginMsg(error.message);if(await verify()){reset();await list()}};
+$("logout").onclick=async()=>{await db.auth.signOut();location.reload()};
+$("newBtn").onclick=reset;$("refresh").onclick=list;
+$("saveDraft").onclick=async()=>{try{await save(false)}catch(e){msg(e.message,true)}};
+$("savePublish").onclick=async()=>{try{await save(true)}catch(e){msg(e.message,true)}};
+$("publishAll").onclick=async()=>{try{const r=await publish();msg(`Publish selesai: ${r.published} artikel.`)}catch(e){msg(e.message,true)}};
+$("articleList").onclick=async e=>{const ed=e.target.closest("[data-edit]"),del=e.target.closest("[data-delete]");if(ed)return edit(ed.dataset.edit);if(del&&confirm("Hapus artikel ini?")){const {error}=await db.from("articles").delete().eq("id",del.dataset.delete);if(error)return msg(error.message,true);await publish();await list();msg("Artikel dihapus dan data public diperbarui.")}};
+(async()=>{if(await verify()){reset();await list()}})();
+</script>
+</body>
+</html>
